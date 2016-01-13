@@ -17,6 +17,7 @@ import traceback
 import tornado.web
 import tornado.gen as gen
 from tornado.locks import Condition
+from tornado.locks import Semaphore
 
 from thumbor import __version__
 from thumbor.context import Context
@@ -45,7 +46,8 @@ class FetchResult(object):
 
 
 class BaseHandler(tornado.web.RequestHandler):
-    url_locks = {}
+    url_conditions = {}
+    ip_semaphores = {}
 
     def _error(self, status, msg=None):
         self.set_status(status)
@@ -441,14 +443,14 @@ class BaseHandler(tornado.web.RequestHandler):
 
         storage = self.context.modules.storage
 
-        yield self.acquire_url_lock(url)
+        yield self.acquire_url_condition(url)
 
         try:
             fetch_result.buffer = yield gen.maybe_future(storage.get(url))
             mime = None
 
             if fetch_result.buffer is not None:
-                self.release_url_lock(url)
+                self.release_url_condition(url)
 
                 fetch_result.successful = True
 
@@ -466,7 +468,7 @@ class BaseHandler(tornado.web.RequestHandler):
 
             loader_result = yield self.context.modules.loader.load(self.context, url)
         finally:
-            self.release_url_lock(url)
+            self.release_url_condition(url)
 
         if isinstance(loader_result, LoaderResult):
             # TODO _fetch should probably return a result object vs a list to
@@ -539,18 +541,60 @@ class BaseHandler(tornado.web.RequestHandler):
             raise tornado.gen.Return("")
 
     @gen.coroutine
-    def acquire_url_lock(self, url):
-        if not url in BaseHandler.url_locks:
-            BaseHandler.url_locks[url] = Condition()
+    def acquire_url_condition(self, url):
+        if not url in BaseHandler.url_conditions:
+            BaseHandler.url_conditions[url] = Condition()
         else:
-            yield BaseHandler.url_locks[url].wait()
+            yield BaseHandler.url_conditions[url].wait()
 
-    def release_url_lock(self, url):
+    def release_url_condition(self, url):
         try:
-            BaseHandler.url_locks[url].notify_all()
-            del BaseHandler.url_locks[url]
+            BaseHandler.url_conditions[url].notify_all()
+            del BaseHandler.url_conditions[url]
         except KeyError:
             pass
+
+    @gen.coroutine
+    def prepare(self):
+        if self.context.config.MAX_CONNECTIONS_PER_IP is None:
+            return
+
+        max_conns = self.context.config.MAX_CONNECTIONS_PER_IP
+        client_ip = self.get_client_ip()
+
+        if client_ip not in BaseHandler.ip_semaphores:
+            BaseHandler.ip_semaphores[client_ip] = Semaphore(max_conns)
+
+        timeout = None
+
+        if self.context.config.MAX_CONNECTIONS_PER_IP_TIMEOUT is not None:
+            timeout = datetime.timedelta(
+                seconds=self.context.config.MAX_CONNECTIONS_PER_IP_TIMEOUT
+            )
+
+        try:
+            yield BaseHandler.ip_semaphores[client_ip].acquire(timeout=timeout)
+        except gen.TimeoutError:
+            self._error(503)
+
+    def on_finish(self):
+        client_ip = self.get_client_ip()
+
+        if client_ip in BaseHandler.ip_semaphores:
+            BaseHandler.ip_semaphores[client_ip].release()
+
+        return super(BaseHandler, self).on_finish()
+
+    def get_client_ip(self):
+        client_ip = self.request.remote_ip
+
+        # When dealing with proxies, the true client ip
+        # is available through a header
+        if 'X-Forwarded-For' in self.request.headers:
+            ip_chain = self.request.headers['X-Forwarded-For']
+            client_ip = ip_chain.split(',')[0]
+
+        return client_ip
 
 
 class ContextHandler(BaseHandler):

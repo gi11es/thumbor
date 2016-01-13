@@ -18,6 +18,8 @@ import pytz
 import subprocess
 
 import tornado.web
+import tornado.gen as gen
+from tornado.locks import Semaphore
 from preggy import expect
 from mock import Mock, patch
 
@@ -791,3 +793,81 @@ class ImageOperationsWithJpegtranTestCase(BaseImagingTestCase):
         expect(output).to_equal('Encoding Process                : Progressive DCT, Huffman coding\n')
 
         os.remove(tmp_file_path)
+
+class MaxConnectionsPerIP(BaseImagingTestCase):
+    def get_context(self):
+        cfg = Config(SECURITY_KEY='ACME-SEC')
+        cfg.LOADER = "thumbor.loaders.file_loader"
+        cfg.FILE_LOADER_ROOT_PATH = self.loader_path
+
+        importer = Importer(cfg)
+        importer.import_modules()
+        server = ServerParameters(8889, 'localhost', 'thumbor.conf', None, 'info', None)
+        server.security_key = 'ACME-SEC'
+        return Context(server, cfg, importer)
+
+    @tornado.testing.gen_test
+    def test_should_hold_and_then_timeout(self):
+        old_execute_image_operations = BaseHandler.execute_image_operations
+        sem = Semaphore()
+        yield sem.acquire()
+
+        @gen.coroutine
+        def execute_image_operations(self):
+            yield sem.acquire()
+
+            old_execute_image_operations(self)
+
+        BaseHandler.execute_image_operations = execute_image_operations
+
+        self.context.config.MAX_CONNECTIONS_PER_IP = 1
+        self.context.config.MAX_CONNECTIONS_PER_IP_TIMEOUT = 1
+
+        self.io_loop.call_later(2, sem.release)
+        self.io_loop.call_later(2, sem.release)
+
+        with self.assertRaises(tornado.httpclient.HTTPError) as context:
+            response, response2 = yield [
+                self.http_client.fetch(self.get_url('/unsafe/smart/image.jpg')),
+                self.http_client.fetch(self.get_url('/unsafe/200x200/hidrocarbonetos_9.jpg'))
+            ]
+
+        expect(context.exception.code).to_equal(503)
+
+        BaseHandler.execute_image_operations = old_execute_image_operations
+
+    @tornado.testing.gen_test
+    def test_should_hold_per_ip(self):
+        old_execute_image_operations = BaseHandler.execute_image_operations
+        sem = Semaphore()
+        yield sem.acquire()
+
+        @gen.coroutine
+        def execute_image_operations(self):
+            yield sem.acquire()
+
+            old_execute_image_operations(self)
+
+        BaseHandler.execute_image_operations = execute_image_operations
+
+        self.context.config.MAX_CONNECTIONS_PER_IP = 1
+        self.context.config.MAX_CONNECTIONS_PER_IP_TIMEOUT = 1
+
+        self.io_loop.call_later(2, sem.release)
+        self.io_loop.call_later(2, sem.release)
+
+        request = tornado.httpclient.HTTPRequest(
+            self.get_url('/unsafe/200x200/hidrocarbonetos_9.jpg'),
+            headers={'X-Forwarded-For' : '1.2.3.4'}
+        )
+
+        response, response2 = yield [
+            self.http_client.fetch(self.get_url('/unsafe/smart/image.jpg')),
+            self.http_client.fetch(request)
+        ]
+
+        expect(response.code).to_equal(200)
+        expect(response2.code).to_equal(200)
+
+        BaseHandler.execute_image_operations = old_execute_image_operations
+

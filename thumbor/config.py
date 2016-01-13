@@ -349,6 +349,17 @@ Config.define(
     '(python must be able to import it)', 'Extensibility'
 )
 
+Config.define(
+    'MAX_CONNECTIONS_PER_IP', None,
+    'Maximum amount of concurrent connections per client IP. When the maximum is reached, requests coming from that client ' +
+    'will be put on hold, while requests from other clients will be treated. ' +
+    'This allows preventing a single client from hogging too many resources.', 'Handlers')
+
+Config.define(
+    'MAX_CONNECTIONS_PER_IP_TIMEOUT', None,
+    'We might not want to put requests for a given IP on hold forever. ' +
+    'Setting this timeout limit makes requests held for too long 503 after that manys seconds.', 'Handlers')
+
 
 def generate_config():
     config.generate_config()
