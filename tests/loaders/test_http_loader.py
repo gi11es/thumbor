@@ -94,7 +94,7 @@ class ReturnContentTestCase(PythonTestCase):
         expect(result).to_be_instance_of(LoaderResult)
         expect(result.buffer).to_be_null()
         expect(result.successful).to_be_false()
-        expect(result.error).to_equal(LoaderResult.ERROR_UPSTREAM)
+        expect(result.error).to_equal(502)
 
     def test_return_upstream_error_on_body_empty(self):
         response_mock = ResponseMock(body='', code=200)
@@ -105,7 +105,7 @@ class ReturnContentTestCase(PythonTestCase):
         expect(result).to_be_instance_of(LoaderResult)
         expect(result.buffer).to_be_null()
         expect(result.successful).to_be_false()
-        expect(result.error).to_equal(LoaderResult.ERROR_UPSTREAM)
+        expect(result.error).to_equal(502)
 
 
 class ValidateUrlTestCase(PythonTestCase):

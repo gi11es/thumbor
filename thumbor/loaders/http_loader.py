@@ -60,15 +60,15 @@ def return_contents(response, url, callback, context):
         result.successful = False
         if response.code == 599:
             # Return a Gateway Timeout status downstream if upstream times out
-            result.error = LoaderResult.ERROR_TIMEOUT
+            result.error = 504
         else:
-            result.error = LoaderResult.ERROR_NOT_FOUND
+            result.error = 404
 
         logger.warn(u"ERROR retrieving image {0}: {1}".format(url, str(response.error)))
 
     elif response.body is None or len(response.body) == 0:
         result.successful = False
-        result.error = LoaderResult.ERROR_UPSTREAM
+        result.error = 502
 
         logger.warn(u"ERROR retrieving image {0}: Empty response.".format(url))
     else:

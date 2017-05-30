@@ -112,18 +112,10 @@ class BaseHandler(tornado.web.RequestHandler):
             )
 
             if not result.successful:
-                if result.loader_error == LoaderResult.ERROR_NOT_FOUND:
-                    self._error(404)
+                if result.loader_error is not None:
+                    self._error(result.loader_error)
                     return
-                elif result.loader_error == LoaderResult.ERROR_UPSTREAM:
-                    # Return a Bad Gateway status if the error came from upstream
-                    self._error(502)
-                    return
-                elif result.loader_error == LoaderResult.ERROR_TIMEOUT:
-                    # Return a Gateway Timeout status if upstream timed out (i.e. 599)
-                    self._error(504)
-                    return
-                elif result.engine_error == EngineResult.COULD_NOT_LOAD_IMAGE:
+                elif hasattr(result, 'engine_error') and result.engine_error == EngineResult.COULD_NOT_LOAD_IMAGE:
                     self._error(400)
                     return
                 else:
