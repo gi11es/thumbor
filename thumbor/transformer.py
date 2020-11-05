@@ -384,6 +384,8 @@ class Transformer:
         self.context.request.width = int(max(requested_width, resize_width))
         self.context.request.height = int(max(requested_height, resize_height))
 
+        logger.debug("Resize requested for fit-in: %r %r" % (resize_width, resize_height) )
+        
         self.engine.resize(resize_width, resize_height)
 
     def debug(self):
