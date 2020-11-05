@@ -38,7 +38,7 @@ coverage:
 
 unit:
 	@echo "Nproc! $$NPROC"
-	@pytest -n $(NPROC) --cov=thumbor tests/
+	@pytest -n 4 --cov=thumbor tests/
 
 kill_redis:
 	@-redis-cli -p 6668 -a hey_you shutdown
