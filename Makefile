@@ -36,6 +36,7 @@ coverage:
 	@coverage report -m --fail-under=10
 
 unit:
+	@echo $(shell nproc)
 	@pytest -n $(shell nproc) --cov=thumbor tests/
 
 kill_redis:
