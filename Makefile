@@ -1,7 +1,6 @@
 .PHONY: docs build perf
 
 OS := $(shell uname)
-NPROC := $(shell nproc)
 
 run: compile_ext
 	@thumbor -l debug -d -c thumbor/thumbor.conf
@@ -37,8 +36,7 @@ coverage:
 	@coverage report -m --fail-under=10
 
 unit:
-	@echo "Nproc! $$NPROC"
-	@pytest -n 4 --cov=thumbor tests/
+	@pytest -n `nproc` --cov=thumbor tests/
 
 kill_redis:
 	@-redis-cli -p 6668 -a hey_you shutdown
